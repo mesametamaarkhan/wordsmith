@@ -1,0 +1,86 @@
+---
+- name: Configure Wordsmith EC2 host
+  hosts: wordsmith
+  become: true
+
+  vars:
+    microk8s_channel: "1.33"
+    target_user: ubuntu
+    docker_packages:
+      - docker.io
+      - python3-pip
+
+  tasks:
+    - name: Update apt package index
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Upgrade installed packages
+      ansible.builtin.apt:
+        upgrade: dist
+
+    - name: Install Docker and supporting packages
+      ansible.builtin.apt:
+        name: "{{ docker_packages }}"
+        state: present
+
+    - name: Ensure Docker service is enabled and started
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Check whether MicroK8s is already installed
+      ansible.builtin.command: snap list microk8s
+      register: microk8s_installed
+      failed_when: false
+      changed_when: false
+
+    - name: Install MicroK8s
+      ansible.builtin.command: "snap install microk8s --classic --channel={{ microk8s_channel }}"
+      when: microk8s_installed.rc != 0
+
+    - name: Ensure ubuntu user is in docker group
+      ansible.builtin.user:
+        name: "{{ target_user }}"
+        groups: docker
+        append: true
+
+    - name: Ensure ubuntu user is in microk8s group
+      ansible.builtin.user:
+        name: "{{ target_user }}"
+        groups: microk8s
+        append: true
+
+    - name: Ensure kube config directory exists
+      ansible.builtin.file:
+        path: "/home/{{ target_user }}/.kube"
+        state: directory
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: "0700"
+
+    - name: Wait for MicroK8s to be ready
+      ansible.builtin.command: microk8s status --wait-ready
+      register: microk8s_status
+      changed_when: false
+
+    - name: Enable MicroK8s DNS addon
+      ansible.builtin.command: microk8s enable dns
+      register: microk8s_dns
+      changed_when: "'Nothing to do for' not in microk8s_dns.stdout"
+
+    - name: Enable MicroK8s storage addon
+      ansible.builtin.command: microk8s enable hostpath-storage
+      register: microk8s_storage
+      changed_when: "'Nothing to do for' not in microk8s_storage.stdout"
+
+    - name: Ensure kubectl alias exists for ubuntu user
+      ansible.builtin.lineinfile:
+        path: "/home/{{ target_user }}/.bashrc"
+        line: "alias kubectl='microk8s kubectl'"
+        state: present
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: "0644"

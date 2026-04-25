@@ -212,11 +212,31 @@ Example output:
 public_ip = 54.xx.xx.xx
 ```
 
+SSH into the instance after `terraform apply`:
+
+```bash
+ssh -i /path/to/your-key.pem ubuntu@<EC2_PUBLIC_IP>
+```
+
+Bootstrap MicroK8s on the EC2 host:
+
+```bash
+chmod +x scripts/bootstrap-microk8s.sh
+scp -i /path/to/your-key.pem scripts/bootstrap-microk8s.sh ubuntu@<EC2_PUBLIC_IP>:~
+ssh -i /path/to/your-key.pem ubuntu@<EC2_PUBLIC_IP>
+./bootstrap-microk8s.sh
+exit
+ssh -i /path/to/your-key.pem ubuntu@<EC2_PUBLIC_IP>
+microk8s kubectl get nodes
+```
+
+The bootstrap script installs MicroK8s from the official snap, enables `dns` and `hostpath-storage`, and prepares the `ubuntu` user for `microk8s kubectl` access.
+
 ## GitHub Actions CI
 
 The workflow at `.github/workflows/ci.yml` runs on pushes to `main` and:
 
-- logs in to Docker Hub using `DOCKER_USERNAME` and `DOCKER_PASSWORD`
+- logs in to Docker Hub using `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`
 - builds the `web` and `words` container images
 - pushes both `latest` and commit SHA tags
 - updates the Kubernetes deployment manifests to the new commit SHA
@@ -224,18 +244,31 @@ The workflow at `.github/workflows/ci.yml` runs on pushes to `main` and:
 
 Required repository secrets:
 
-- `DOCKER_USERNAME`
-- `DOCKER_PASSWORD`
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
 
 ## ArgoCD GitOps CD
 
 ### Install ArgoCD
 
+For a single-node EC2 setup, install MicroK8s first and use its bundled `kubectl`. The official MicroK8s docs recommend:
+
+```bash
+sudo snap install microk8s --classic --channel=1.33
+sudo usermod -a -G microk8s $USER
+mkdir -p ~/.kube
+chmod 0700 ~/.kube
+su - $USER
+microk8s status --wait-ready
+microk8s enable dns
+microk8s enable hostpath-storage
+```
+
 Create the namespace and install the official manifests:
 
 ```bash
 kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 ```
 
 Expose the ArgoCD API server with port-forward:
@@ -256,12 +289,26 @@ Retrieve the initial admin password:
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
 ```
 
+Check that ArgoCD is healthy:
+
+```bash
+kubectl get pods -n argocd
+kubectl get svc -n argocd
+```
+
 ### Create the ArgoCD Application
 
 The ArgoCD application manifest is stored at `argocd/application.yaml`. Apply it with:
 
 ```bash
 kubectl apply -f argocd/application.yaml
+```
+
+Then confirm sync status:
+
+```bash
+kubectl get applications -n argocd
+kubectl describe application wordsmith -n argocd
 ```
 
 This application is configured with:
@@ -295,4 +342,4 @@ Add the following screenshots here for portfolio presentation:
 
 - The Kubernetes manifests intentionally use only `Deployment` and `Service` resources.
 - The Redis dataset is seeded automatically by the `words` API on startup.
-- Replace placeholder Docker Hub and GitHub repository values before deployment.
+- MicroK8s and ArgoCD installation commands are based on the official MicroK8s and ArgoCD getting-started documentation.
