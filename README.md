@@ -1,61 +1,298 @@
-# Wordsmith App
+# Wordsmith DevOps Project
 
-Wordsmith is the demo project originally shown at DockerCon EU 2017 and 2018.
+This repository contains a beginner-friendly but production-structured DevOps portfolio project for the Wordsmith microservices app. The stack runs three services:
 
-The demo app runs across three containers:
+- `web`: Go frontend
+- `words`: Java API that serves random words
+- `redis`: Redis datastore used by the API
 
-- **[api](api/Dockerfile)** - a Java REST API which serves words read from the database
-- **[web](web/Dockerfile)** - a Go web application that calls the API and builds words into sentences
-- **db** - a Postgres database that stores words
+The delivery pipeline covers local Docker development, Docker Hub publishing, Kubernetes deployment, AWS EC2 provisioning with Terraform, GitHub Actions CI, and ArgoCD GitOps continuous delivery.
+
+## Project Structure
+
+```text
+project/
+├── web/
+├── words/
+├── redis/
+├── k8s/
+│   ├── web-deployment.yaml
+│   ├── web-service.yaml
+│   ├── api-deployment.yaml
+│   ├── api-service.yaml
+│   ├── redis-deployment.yaml
+│   └── redis-service.yaml
+├── terraform/
+│   └── main.tf
+├── argocd/
+│   └── application.yaml
+├── .github/workflows/
+│   └── ci.yml
+├── docker-compose.yml
+└── README.md
+```
 
 ## Architecture
 
-![Architecture diagram](architecture.excalidraw.png)
+```text
+                         +-----------------------------+
+                         |         GitHub Repo         |
+                         |  source + k8s manifests     |
+                         +-------------+---------------+
+                                       |
+                                       v
+                            +----------+-----------+
+                            |    GitHub Actions    |
+                            | build + push images  |
+                            +----------+-----------+
+                                       |
+                                       v
+                         +-------------+--------------+
+                         |          Docker Hub        |
+                         | wordsmith-web / wordsmith-api |
+                         +-------------+--------------+
+                                       |
+                     +-----------------+------------------+
+                     |                                    |
+                     v                                    v
+          +----------+-----------+             +----------+-----------+
+          |     ArgoCD Server    |             | Terraform on AWS     |
+          | watches Git repo     |             | provisions EC2 host  |
+          +----------+-----------+             +----------+-----------+
+                     |                                    |
+                     +-----------------+------------------+
+                                       |
+                                       v
+                         +-------------+--------------+
+                         |       Kubernetes Cluster   |
+                         | web NodePort :30007        |
+                         | api ClusterIP              |
+                         | redis ClusterIP            |
+                         +-------------+--------------+
+                                       |
+                                       v
+                          Browser -> http://EC2_IP:30007
+```
 
-## Build and run in Docker Compose
+## End-to-End Flow
 
-The only requirement to build and run the app from source is Docker. Clone this repo and use Docker Compose to build all the images. You can use the new V2 Compose with `docker compose` or the classic `docker-compose` CLI:
+```text
+GitHub push
+-> GitHub Actions builds Docker images
+-> Docker Hub stores images
+-> GitHub Actions updates k8s image tags with commit SHA
+-> ArgoCD detects manifest changes and syncs the cluster
+-> Kubernetes pulls images
+-> Application runs on EC2 cluster
+-> Access via NodePort 30007
+```
 
-```shell
+## Tech Stack
+
+- Docker and Docker Compose
+- Docker Hub
+- Kubernetes
+- ArgoCD
+- Terraform
+- AWS EC2
+- GitHub Actions
+- Go
+- Java 17
+- Redis
+
+## Service Configuration
+
+The application uses environment variables for service discovery:
+
+- `web`
+  - `WORDS_HOST`
+  - `WORDS_PORT`
+  - `WEB_PORT`
+- `words`
+  - `REDIS_HOST`
+  - `REDIS_PORT`
+  - `SERVICE_PORT`
+
+## Local Development with Docker
+
+Build and run the complete stack locally:
+
+```bash
 docker compose up --build
 ```
 
-Or you can pull pre-built images from Docker Hub using `docker compose pull`.
-
-
-## Deploy using Kubernetes manifests
-
-You can deploy the same app to Kubernetes using the [Kustomize configuration](./kustomization.yaml). It will define all of the necessary Deployment and Service objects and a ConfigMap to provide the database schema.
-
-Apply the manifest using `kubectl` while at the root of the project:
-
-```shell
-kubectl apply -k .
-```
-
-Once the pods are running, browse to http://localhost:8080 and you will see the site.
-
-Docker Desktop includes Kubernetes and the [kubectl](https://kubernetes.io/docs/reference/kubectl/overview/) command line, so you can work directly with the cluster. Check the services are up, and you should see output like this:
+Access the app at:
 
 ```text
-kubectl get svc
-NAME         TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE
-db           ClusterIP      None             <none>        55555/TCP        2m
-kubernetes   ClusterIP      10.96.0.1        <none>        443/TCP          38d
-web          LoadBalancer   10.107.215.211   <pending>     8080:30220/TCP   2m
-words        ClusterIP      None             <none>        55555/TCP        2m
+http://localhost:8080
 ```
 
-Check the pods are running and you should see one pod each for the database and web components and five pods for the words API:
+Optional cleanup:
+
+```bash
+docker compose down
+```
+
+## Docker Hub Publishing
+
+The repository is configured with Docker Hub namespace `mtk21` in:
+
+- `docker-compose.yml`
+- `k8s/web-deployment.yaml`
+- `k8s/api-deployment.yaml`
+
+The ArgoCD application points to:
 
 ```text
+https://github.com/mesametamaarkhan/wordsmith.git
+```
+
+Manual build and push example:
+
+```bash
+export DOCKER_USERNAME=mtk21
+export GIT_SHA=$(git rev-parse --short HEAD)
+
+docker build -t $DOCKER_USERNAME/wordsmith-web:latest -t $DOCKER_USERNAME/wordsmith-web:$GIT_SHA ./web
+docker build -t $DOCKER_USERNAME/wordsmith-api:latest -t $DOCKER_USERNAME/wordsmith-api:$GIT_SHA ./words
+
+docker push $DOCKER_USERNAME/wordsmith-web:latest
+docker push $DOCKER_USERNAME/wordsmith-web:$GIT_SHA
+docker push $DOCKER_USERNAME/wordsmith-api:latest
+docker push $DOCKER_USERNAME/wordsmith-api:$GIT_SHA
+```
+
+## Kubernetes Deployment
+
+Apply the Kubernetes resources:
+
+```bash
+kubectl apply -f k8s/redis-deployment.yaml
+kubectl apply -f k8s/redis-service.yaml
+kubectl apply -f k8s/api-deployment.yaml
+kubectl apply -f k8s/api-service.yaml
+kubectl apply -f k8s/web-deployment.yaml
+kubectl apply -f k8s/web-service.yaml
+```
+
+Check the workload status:
+
+```bash
+kubectl get deployments
+kubectl get services
 kubectl get pods
-NAME                   READY     STATUS    RESTARTS   AGE
-db-8678676c79-h2d99    1/1       Running   0          1m
-web-5d6bfbbd8b-6zbl8   1/1       Running   0          1m
-api-858f6678-6c8kk     1/1       Running   0          1m
-api-858f6678-7bqbv     1/1       Running   0          1m
-api-858f6678-fjdws     1/1       Running   0          1m
-api-858f6678-rrr8c     1/1       Running   0          1m
-api-858f6678-x9zqh     1/1       Running   0          1m
 ```
+
+Application access:
+
+```text
+http://<EC2_PUBLIC_IP>:30007
+```
+
+## Terraform on AWS EC2
+
+The Terraform configuration provisions:
+
+- 1 Ubuntu 22.04 EC2 instance
+- `t2.medium` instance type
+- inbound access for `22` and `30007`
+- public IP output
+
+Initialize and apply:
+
+```bash
+cd terraform
+terraform init
+terraform apply -var="key_name=your-keypair-name"
+```
+
+Example output:
+
+```text
+public_ip = 54.xx.xx.xx
+```
+
+## GitHub Actions CI
+
+The workflow at `.github/workflows/ci.yml` runs on pushes to `main` and:
+
+- logs in to Docker Hub using `DOCKER_USERNAME` and `DOCKER_PASSWORD`
+- builds the `web` and `words` container images
+- pushes both `latest` and commit SHA tags
+- updates the Kubernetes deployment manifests to the new commit SHA
+- pushes the manifest change back to `main` for ArgoCD to reconcile
+
+Required repository secrets:
+
+- `DOCKER_USERNAME`
+- `DOCKER_PASSWORD`
+
+## ArgoCD GitOps CD
+
+### Install ArgoCD
+
+Create the namespace and install the official manifests:
+
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+```
+
+Expose the ArgoCD API server with port-forward:
+
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8088:443
+```
+
+Or patch it to NodePort:
+
+```bash
+kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"NodePort"}}'
+```
+
+Retrieve the initial admin password:
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+```
+
+### Create the ArgoCD Application
+
+The ArgoCD application manifest is stored at `argocd/application.yaml`. Apply it with:
+
+```bash
+kubectl apply -f argocd/application.yaml
+```
+
+This application is configured with:
+
+- automatic sync enabled
+- self-healing enabled
+- prune enabled
+- source path set to `/k8s`
+
+## Deployment Order
+
+1. Push code to GitHub.
+2. GitHub Actions builds and pushes updated images to Docker Hub.
+3. GitHub Actions writes the new commit SHA into the Kubernetes manifests and pushes that change to `main`.
+4. ArgoCD detects the Git change in `main`.
+5. ArgoCD syncs the cluster automatically.
+6. Kubernetes pulls the new SHA-tagged images.
+7. Users access the app on `http://<EC2_PUBLIC_IP>:30007`.
+
+## Screenshots
+
+Add the following screenshots here for portfolio presentation:
+
+- GitHub Actions successful pipeline run
+- Docker Hub image tags
+- `kubectl get pods` and `kubectl get svc`
+- ArgoCD application synced and healthy
+- Wordsmith app running in browser
+
+## Notes
+
+- The Kubernetes manifests intentionally use only `Deployment` and `Service` resources.
+- The Redis dataset is seeded automatically by the `words` API on startup.
+- Replace placeholder Docker Hub and GitHub repository values before deployment.

@@ -1,20 +1,42 @@
-version: '3.9'
-# we'll keep the version for now to work in Compose and Swarm
+version: "3.9"
 
 services:
-  db:
-    image: postgres:10.0-alpine
-    volumes:
-      - ./db:/docker-entrypoint-initdb.d/
+  redis:
+    image: redis:7-alpine
+    container_name: wordsmith-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  api:
-    build: api
-    image: dockersamples/wordsmith-api
-    deploy:
-      replicas: 5
+  words:
+    build:
+      context: ./words
+    image: mtk21/wordsmith-api:latest
+    container_name: wordsmith-api
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_PORT: 8080
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
 
   web:
-    build: web
-    image: dockersamples/wordsmith-web
+    build:
+      context: ./web
+    image: mtk21/wordsmith-web:latest
+    container_name: wordsmith-web
+    environment:
+      WORDS_HOST: words
+      WORDS_PORT: 8080
+      WEB_PORT: 8080
+    depends_on:
+      - words
     ports:
-     - "8080:80"
+      - "8080:8080"

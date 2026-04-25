@@ -1,21 +1,20 @@
-# BUILD
-# use the build platforms matching arch rather than target arch
-FROM --platform=$BUILDPLATFORM golang:alpine as builder
-WORKDIR /usr/local/app
+FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS builder
+WORKDIR /src
 ARG TARGETARCH
 
-COPY dispatcher.go .
+COPY dispatcher.go ./
 
-# build for the target arch not the build platform host arch
-RUN GOOS=linux GOARCH=$TARGETARCH go build dispatcher.go
+RUN GOOS=linux GOARCH=$TARGETARCH go build -ldflags="-s -w" -o dispatcher ./dispatcher.go
 
-# RUN
-# defaults to using the target arch image
-FROM alpine:latest
-WORKDIR /usr/local/app
+FROM alpine:3.20
+WORKDIR /app
 
-COPY --from=builder /usr/local/app/dispatcher ./
-COPY static ./static/
+COPY --from=builder /src/dispatcher ./dispatcher
+COPY static ./static
 
-EXPOSE 80
-CMD ["/usr/local/app/dispatcher"]
+ENV WEB_PORT=8080 \
+    WORDS_HOST=api \
+    WORDS_PORT=8080
+
+EXPOSE 8080
+CMD ["./dispatcher"]

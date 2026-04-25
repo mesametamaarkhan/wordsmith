@@ -2,23 +2,31 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
-	"math/rand"
-	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 )
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
+	apiHost := envOrDefault("WORDS_HOST", "api")
+	apiPort := envAsInt("WORDS_PORT", 8080)
+	webPort := envAsInt("WEB_PORT", 8080)
 
-	fwd := &forwarder{"api", 8080}
+	fwd := &forwarder{host: apiHost, port: apiPort}
 	http.Handle("/words/", http.StripPrefix("/words", fwd))
 	http.Handle("/", http.FileServer(http.Dir("static")))
 
-	fmt.Println("Listening on port 80")
-	http.ListenAndServe(":80", nil)
+	addr := fmt.Sprintf(":%d", webPort)
+	fmt.Printf("Listening on port %d and forwarding to %s:%d\n", webPort, apiHost, apiPort)
+	server := &http.Server{
+		Addr:              addr,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	log.Fatal(server.ListenAndServe())
 }
 
 type forwarder struct {
@@ -27,45 +35,61 @@ type forwarder struct {
 }
 
 func (f *forwarder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	addrs, err := net.LookupHost(f.host)
-	if err != nil {
-		log.Println("Error", err)
-		http.Error(w, err.Error(), 500)
-		return
+	url := fmt.Sprintf("http://%s:%d%s", f.host, f.port, r.URL.Path)
+	if r.URL.RawQuery != "" {
+		url = fmt.Sprintf("%s?%s", url, r.URL.RawQuery)
 	}
-
-	log.Printf("%s %d available ips: %v", r.URL.Path, len(addrs), addrs)
-	ip := addrs[rand.Intn(len(addrs))]
-	log.Printf("%s I choose %s", r.URL.Path, ip)
-
-	url := fmt.Sprintf("http://%s:%d%s", ip, f.port, r.URL.Path)
 	log.Printf("%s Calling %s", r.URL.Path, url)
 
-	if err = copy(url, ip, w); err != nil {
+	if err := copy(url, w); err != nil {
 		log.Println("Error", err)
 		http.Error(w, err.Error(), 500)
 		return
 	}
 }
 
-func copy(url, ip string, w http.ResponseWriter) error {
+func copy(url string, w http.ResponseWriter) error {
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
 	for header, values := range resp.Header {
 		for _, value := range values {
 			w.Header().Add(header, value)
 		}
 	}
-	w.Header().Set("source", ip)
+	w.WriteHeader(resp.StatusCode)
 
-	buf, err := ioutil.ReadAll(resp.Body)
+	buf, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 
 	_, err = w.Write(buf)
 	return err
+}
+
+func envOrDefault(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+
+	return fallback
+}
+
+func envAsInt(name string, fallback int) int {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return fallback
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		log.Printf("invalid integer for %s=%q, using default %d", name, raw, fallback)
+		return fallback
+	}
+
+	return value
 }
