@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: mtk21/wordsmith-web:latest
+          image: mtk21/wordsmith-web:f2b6a3280f1e071ae29ef85f9ccc0159f8b6ea1c
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
