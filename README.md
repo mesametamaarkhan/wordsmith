@@ -8,6 +8,11 @@ This repository contains a beginner-friendly but production-structured DevOps po
 
 The delivery pipeline covers local Docker development, Docker Hub publishing, Kubernetes deployment, AWS EC2 provisioning with Terraform, GitHub Actions CI, and ArgoCD GitOps continuous delivery.
 
+## Group Members
+
+- Member 1: Name: Mesam E Tamaar  |  Roll No: 22i-1304  | Cloud Computing (CS-B)
+- Member 2: Name: Tashfeen Hassan  |  Roll No: 22i-0860  | Cloud Computing (CS-B)
+
 ## Project Structure
 
 ```text
@@ -49,7 +54,7 @@ project/
                                        v
                          +-------------+--------------+
                          |          Docker Hub        |
-                         | wordsmith-web / wordsmith-api |
+                         | wordsmith-web/wordsmith-api|
                          +-------------+--------------+
                                        |
                      +-----------------+------------------+
@@ -57,7 +62,7 @@ project/
                      v                                    v
           +----------+-----------+             +----------+-----------+
           |     ArgoCD Server    |             | Terraform on AWS     |
-          | watches Git repo     |             | provisions EC2 host  |
+          |   watches Git repo   |             | provisions EC2 host  |
           +----------+-----------+             +----------+-----------+
                      |                                    |
                      +-----------------+------------------+
@@ -194,7 +199,7 @@ http://<EC2_PUBLIC_IP>:30007
 The Terraform configuration provisions:
 
 - 1 Ubuntu 22.04 EC2 instance
-- `t2.medium` instance type
+- `t3.small` instance type
 - inbound access for `22` and `30007`
 - public IP output
 
@@ -328,15 +333,6 @@ This application is configured with:
 6. Kubernetes pulls the new SHA-tagged images.
 7. Users access the app on `http://<EC2_PUBLIC_IP>:30007`.
 
-## Screenshots
-
-Add the following screenshots here for portfolio presentation:
-
-- GitHub Actions successful pipeline run
-- Docker Hub image tags
-- `kubectl get pods` and `kubectl get svc`
-- ArgoCD application synced and healthy
-- Wordsmith app running in browser
 
 ## Notes
 
