@@ -30,7 +30,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push web image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./web
           push: true
@@ -39,7 +39,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/wordsmith-web:latest
 
       - name: Build and push api image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./words
           push: true
